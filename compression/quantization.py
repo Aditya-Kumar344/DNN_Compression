@@ -1,14 +1,15 @@
+import math
 from .conv2d import modified_conv2d
 from .linear import modified_linear
 
 
 def quantize_model(model, k=16):
-    """
-    Applies k-means quantization to all modified layers.
-    k = number of weight clusters (centroids).
-    Paper uses k=2^b where b is number of bits (e.g. k=16 for 4-bit).
-    """
+    # ── Fix Problem 7: correct bit calculation for any k ─────────────────
+    bits = math.ceil(math.log2(k)) if k > 1 else 1
+
     for module in model.modules():
         if isinstance(module, (modified_conv2d, modified_linear)):
             module.quantize(k)
-    print(f"[Quantization] Done — k={k} centroids ({k.bit_length()-1}-bit)")
+
+    print(f"[Quantization] Done — k={k} centroids "
+          f"(~{bits}-bit, exact={math.log2(k):.2f}-bit)")

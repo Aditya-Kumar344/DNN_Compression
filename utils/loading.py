@@ -3,43 +3,43 @@ import numpy as np
 
 
 def save_model_npz(model, path="compressed_models/compressed.npz"):
-    """
-    Saves model weights + masks to .npz format.
-    Smaller than .pth because pruned weights are stored sparsely.
-    """
     arrays = {}
-    for name, param in model.named_parameters():
-        arrays[name] = param.data.cpu().numpy()
 
-    # Also save masks from pruned layers
+    # Save all parameters
+    for name, param in model.named_parameters():
+        arrays[f"param_{name}"] = param.data.cpu().numpy()
+
+    # ── Fix Problem 5: save ALL buffers, not just masks ──────────────────
     for name, buf in model.named_buffers():
-        if "mask" in name:
-            arrays[f"mask_{name}"] = buf.cpu().numpy()
+        arrays[f"buffer_{name}"] = buf.cpu().numpy()
 
     np.savez_compressed(path, **arrays)
-    print(f"[Loading] Model saved to {path}")
+    print(f"[Saved] {path}  "
+          f"({len([k for k in arrays if k.startswith('param_')])} params, "
+          f"{len([k for k in arrays if k.startswith('buffer_')])} buffers)")
 
 
 def load_model_from_npz(model, path, device):
-    """
-    Loads weights + masks back into model from .npz file.
-    """
-    data      = np.load(path)
-    state     = model.state_dict()
-    buf_state = {name: buf for name, buf in model.named_buffers()}
+    data = np.load(path)
 
+    # Restore parameters
     for name, param in model.named_parameters():
-        if name in data:
+        key = f"param_{name}"
+        if key in data:
             param.data = torch.tensor(
-                data[name], dtype=param.dtype
+                data[key], dtype=param.dtype
             ).to(device)
+        else:
+            print(f"[Load] WARNING: missing param '{name}' in {path}")
 
-    # Restore masks
+    # ── Fix Problem 5: restore ALL buffers (masks + mode_flags + BN) ─────
     for name, buf in model.named_buffers():
-        key = f"mask_{name}"
+        key = f"buffer_{name}"
         if key in data:
             buf.copy_(torch.tensor(data[key], dtype=buf.dtype).to(device))
+        else:
+            print(f"[Load] WARNING: missing buffer '{name}' in {path}")
 
     model.to(device)
-    print(f"[Loading] Model loaded from {path}")
+    print(f"[Loaded] {path}")
     return model

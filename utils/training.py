@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
+from tqdm import tqdm
 
 
 def train_model(model, train_loader, device, epochs=10, lr=1e-3):
-    """Standard training loop"""
     model.to(device)
     model.train()
 
@@ -15,13 +15,21 @@ def train_model(model, train_loader, device, epochs=10, lr=1e-3):
         correct    = 0
         total      = 0
 
-        for batch in train_loader:
+        # ── tqdm progress bar per epoch ──────────────────────────────
+        loop = tqdm(
+            train_loader,
+            desc=f"Epoch [{epoch+1}/{epochs}]",
+            leave=True,          # keeps bar after epoch finishes
+            ncols=100            # bar width
+        )
+
+        for batch in loop:
             labels   = batch["label"].to(device)
             batch_in = {k: v.to(device) for k, v in batch.items()
                         if k != "label"}
 
             optimizer.zero_grad()
-            outputs = model(batch_in)           # (B, 237)
+            outputs = model(batch_in)
             loss    = criterion(outputs, labels)
             loss.backward()
             optimizer.step()
@@ -31,22 +39,30 @@ def train_model(model, train_loader, device, epochs=10, lr=1e-3):
             correct    += (preds == labels).sum().item()
             total      += labels.size(0)
 
-        acc = 100.0 * correct / total
+            # ── Live stats shown on the bar ──────────────────────────
+            loop.set_postfix({
+                "loss": f"{loss.item():.4f}",
+                "acc" : f"{100.0 * correct / total:.2f}%"
+            })
+
+        epoch_loss = total_loss / len(train_loader)
+        epoch_acc  = 100.0 * correct / total
         print(f"[Train] Epoch {epoch+1}/{epochs} "
-              f"| Loss: {total_loss/len(train_loader):.4f} "
-              f"| Acc: {acc:.2f}%")
+              f"| Avg Loss: {epoch_loss:.4f} "
+              f"| Acc: {epoch_acc:.2f}%")
 
 
 def evaluate(model, loader, device):
-    """Evaluate accuracy on any loader"""
     model.to(device)
     model.eval()
 
     correct = 0
     total   = 0
 
+    loop = tqdm(loader, desc="Evaluating", leave=True, ncols=100)
+
     with torch.no_grad():
-        for batch in loader:
+        for batch in loop:
             labels   = batch["label"].to(device)
             batch_in = {k: v.to(device) for k, v in batch.items()
                         if k != "label"}
@@ -56,12 +72,15 @@ def evaluate(model, loader, device):
             correct += (preds == labels).sum().item()
             total   += labels.size(0)
 
+            loop.set_postfix({
+                "acc": f"{100.0 * correct / total:.2f}%"
+            })
+
     acc = 100.0 * correct / total
     print(f"[Eval] Accuracy: {acc:.2f}%")
     return acc
 
 
 def train_and_eval(model, train_loader, test_loader, device, epochs=10):
-    """Convenience: train then evaluate"""
     train_model(model, train_loader, device, epochs=epochs)
     return evaluate(model, test_loader, device)
